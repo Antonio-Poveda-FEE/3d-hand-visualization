@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Realistic 3D Interactive Hand</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #050510; }
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      backdrop-filter: blur(5px);
+    }
+    h2 { margin-top: 0; color: #ffffff; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 5px; }
+    .blue { color: #4da6ff; }
+    .pink { color: #ff69b4; }
+    .green { color: #4caf50; }
+    #status {
+      margin-top: 15px;
+      font-size: 12px;
+      color: #aaa;
+    }
+    #loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      font-size: 24px;
+      z-index: 1000;
+    }
+    #error {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      padding: 15px;
+      background: rgba(255,0,0,0.7);
+      color: white;
+      border-radius: 8px;
+      display: none;
+      z-index: 1001;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading 3D Hand...</div>
+  <div id="error"></div>
+  
+  <div id="info">
+    <h2>Interactive 3D Hand</h2>
+    <ul>
+      <li><span class="blue">Rotate view</span>: Click and drag anywhere</li>
+      <li><span class="pink">Move fingers</span>: Click on a finger and drag up/down</li>
+      <li><span class="green">Zoom</span>: Scroll wheel</li>
+    </ul>
+    <div id="status">Click on a finger to move it</div>
+  </div>
+  
+  <!-- Load Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  
+  <!-- Include OrbitControls code directly -->
+  <script>
+  // OrbitControls implementation - directly included to avoid loading issues
+  // Simplified version based on Three.js r150
+  THREE.OrbitControls = function ( object, domElement ) {
+
+    this.object = object;
+    this.domElement = ( domElement !== undefined ) ? domElement : document;
+
+    // Set to false to disable this control
+    this.enabled = true;
+
+    // "target" sets the location of focus, where the object orbits around
+    this.target = new THREE.Vector3();
+
+    // How far you can dolly in and out
+    this.minDistance = 0;
+    this.maxDistance = Infinity;
+
+    // How far you can zoom in and out
+    this.minZoom = 0;
+    this.maxZoom = Infinity;
+
+    // How far you can orbit vertically, upper and lower limits
+    this.minPolarAngle = 0; // radians
+    this.maxPolarAngle = Math.PI; // radians
+
+    // How far you can orbit horizontally, upper and lower limits
+    this.minAzimuthAngle = - Infinity; // radians
+    this.maxAzimuthAngle = Infinity; // radians
+
+    // Set to true to enable damping (inertia)
+    this.enableDamping = false;
+    this.dampingFactor = 0.05;
+
+    // This option actually enables dollying in and out
+    this.enableZoom = true;
+    this.zoomSpeed = 1.0;
+
+    // Set to false to disable rotating
+    this.enableRotate = true;
+    this.rotateSpeed = 0.5; // REDUCED FROM 1.0 TO 0.5 (HALF SPEED)
+
+    // Set to false to disable panning
+    this.enablePan = true;
+    this.panSpeed = 1.0;
+    this.screenSpacePanning = false;
+    this.keyPanSpeed = 7.0; // pixels moved per arrow key push
+
+    // Set to true to automatically rotate around the target
+    this.autoRotate = false;
+    this.autoRotateSpeed = 2.0; // 30 seconds per round when fps is 60
+
+    // Set to false to disable use of the keys
+    this.enableKeys = true;
+
+    // The four arrow keys
+    this.keys = { LEFT: 37, UP: 38, RIGHT: 39, BOTTOM: 40 };
+
+    // Mouse buttons
+    this.mouseButtons = { LEFT: THREE.MOUSE.LEFT, MIDDLE: THREE.MOUSE.MIDDLE, RIGHT: THREE.MOUSE.RIGHT };
+
+    // for reset
+    this.target0 = this.target.clone();
+    this.position0 = this.object.position.clone();
+    this.zoom0 = this.object.zoom;
+
+    // the target DOM element for key events
+    this._domElementKeyEvents = null;
+
+    // State variables
+    this.spherical = new THREE.Spherical();
+    this.sphericalDelta = new THREE.Spherical();
+
+    this.scale = 1;
+    this.panOffset = new THREE.Vector3();
+    this.zoomChanged = false;
+
+    this.rotateStart = new THREE.Vector2();
+    this.rotateEnd = new THREE.Vector2();
+    this.rotateDelta = new THREE.Vector2();
+
+    this.panStart = new THREE.Vector2();
+    this.panEnd = new THREE.Vector2();
+    this.panDelta = new THREE.Vector2();
+
+    this.dollyStart = new THREE.Vector2();
+    this.dollyEnd = new THREE.Vector2();
+    this.dollyDelta = new THREE.Vector2();
+
+    this.update = function () {
+      var offset = new THREE.Vector3();
+
+      // so camera.up is the orbit axis
+      var quat = new THREE.Quaternion().setFromUnitVectors( object.up, new THREE.Vector3( 0, 1, 0 ) );
+      var quatInverse = quat.clone().invert();
+
+      var lastPosition = new THREE.Vector3();
+      var lastQuaternion = new THREE.Quaternion();
+
+      var position = this.object.position;
+
+      offset.copy( position ).sub( this.target );
+
+      // rotate offset to "y-axis-is-up" space
+      offset.applyQuaternion( quat );
+
+      // angle from z-axis around y-axis
+      this.spherical.setFromVector3( offset );
+
+      if ( this.autoRotate && this.enabled ) {
+          this.spherical.theta += this.autoRotateSpeed * 0.01;
+      }
+
+      this.spherical.theta += this.sphericalDelta.theta;
+      this.spherical.phi += this.sphericalDelta.phi;
+
+      // restrict phi to be between desired limits
+      this.spherical.phi = Math.max( this.minPolarAngle, Math.min( this.maxPolarAngle, this.spherical.phi ) );
+      this.spherical.makeSafe();
+      this.spherical.radius *= this.scale;
+
+      // restrict radius to be between desired limits
+      this.spherical.radius = Math.max( this.minDistance, Math.min( this.maxDistance, this.spherical.radius ) );
+
+      // move target to panned location
+      this.target.add( this.panOffset );
+
+      offset.setFromSpherical( this.spherical );
+
+      // rotate offset back to "camera-up-vector-is-up" space
+      offset.applyQuaternion( quatInverse );
+
+      position.copy( this.target ).add( offset );
+
+      this.object.lookAt( this.target );
+
+      if ( this.enableDamping === true ) {
+          this.sphericalDelta.theta *= ( 1 - this.dampingFactor );
+          this.sphericalDelta.phi *= ( 1 - this.dampingFactor );
+          this.panOffset.multiplyScalar( 1 - this.dampingFactor );
+      } else {
+          this.sphericalDelta.set( 0, 0, 0 );
+          this.panOffset.set( 0, 0, 0 );
+      }
+
+      this.scale = 1;
+
+      // update condition is:
+      // min(camera displacement, camera rotation in radians)^2 > EPS
+      // using small-angle approximation cos(x/2) = 1 - x^2 / 8
+      if ( this.zoomChanged ||
+          lastPosition.distanceToSquared( this.object.position ) > 0.01 ||
+          8 * ( 1 - lastQuaternion.dot( this.object.quaternion ) ) > 0.01 ) {
+
+          lastPosition.copy( this.object.position );
+          lastQuaternion.copy( this.object.quaternion );
+          this.zoomChanged = false;
+
+          return true;
+      }
+
+      return false;
+    };
+    
+    // Basic event handlers for mouse movement
+    var scope = this;
+    
+    function onMouseDown(event) {
+      event.preventDefault();
+      
+      scope.rotateStart.set(event.clientX, event.clientY);
+      document.addEventListener('mousemove', onMouseMove, false);
+      document.addEventListener('mouseup', onMouseUp, false);
+    }
+    
+    function onMouseMove(event) {
+      event.preventDefault();
+      
+      scope.rotateEnd.set(event.clientX, event.clientY);
+      scope.rotateDelta.subVectors(scope.rotateEnd, scope.rotateStart);
+      
+      // rotating across whole screen goes 360 degrees around
+      scope.sphericalDelta.theta -= 2 * Math.PI * scope.rotateDelta.x / scope.domElement.clientWidth * scope.rotateSpeed;
+      
+      // rotating up and down along whole screen attempts to go 360, but limited to 180
+      scope.sphericalDelta.phi -= 2 * Math.PI * scope.rotateDelta.y / scope.domElement.clientHeight * scope.rotateSpeed;
+      
+      scope.rotateStart.copy(scope.rotateEnd);
+    }
+    
+    function onMouseUp() {
+      document.removeEventListener('mousemove', onMouseMove, false);
+      document.removeEventListener('mouseup', onMouseUp, false);
+    }
+    
+    function onMouseWheel(event) {
+      event.preventDefault();
+      
+      if (event.deltaY < 0) {
+        scope.scale /= 0.9;
+      } else {
+        scope.scale *= 0.9;
+      }
+    }
+    
+    this.domElement.addEventListener('mousedown', onMouseDown, false);
+    this.domElement.addEventListener('wheel', onMouseWheel, false);
+    
+    // force an update at start
+    this.update();
+  };
+  </script>
+
+  <!-- Main script -->
+  <script>
+  // Wait for everything to load
+  window.addEventListener('DOMContentLoaded', () => {
+    try {
+      console.log("Three.js loaded successfully:", THREE.REVISION);
+      
+      // Scene, camera, renderer setup
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x050510);
+
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.z = 5;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.shadowMap.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      // Controls
+      const controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      console.log("Orbit controls configured");
+
+      // Lighting for realistic effect
+      const ambientLight = new THREE.AmbientLight(0x404040, 1);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(5, 5, 5);
+      directionalLight.castShadow = true;
+      scene.add(directionalLight);
+
+      const blueLight = new THREE.PointLight(0x0044ff, 1, 10);
+      blueLight.position.set(-5, 2, 3);
+      scene.add(blueLight);
+
+      const pinkLight = new THREE.PointLight(0xff00ff, 1, 10);
+      pinkLight.position.set(5, -2, 3);
+      scene.add(pinkLight);
+
+      // Advanced skin material for realism
+      const skinMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffe0d0,            // Base skin color
+        roughness: 0.3,             // Lower roughness for slightly wet look
+        metalness: 0.05,            // Low metalness for skin
+        flatShading: false,         // Smooth shading for realism
+        emissive: 0x331100,         // Slight subsurface scattering simulation
+        emissiveIntensity: 0.05     // Very subtle
+      });
+
+      // Nail material
+      const nailMaterial = new THREE.MeshStandardMaterial({
+        color: 0xfff5f0,
+        roughness: 0.2,
+        metalness: 0.1,
+        flatShading: false
+      });
+
+      // Hand variables
+      let hand;
+      const fingers = {
+        thumb: null,
+        index: null,
+        middle: null,
+        ring: null,
+        pinky: null
+      };
+      let activeFinger = null;
+      let fingerSelected = false;
+      
+      // Debug flag
+      const DEBUG = true;
+
+      // Create a more realistic hand
+      function createRealisticHand() {
+        console.log("Creating realistic hand...");
+        
+        // Create hand group
+        hand = new THREE.Group();
+        scene.add(hand);
+
+        // Create palm - more detailed with curved edges
+        const palmGeometry = new THREE.BoxGeometry(1.5, 0.4, 1.8, 3, 1, 3);
+        // Modify vertices to make the palm more natural
+        for (let i = 0; i < palmGeometry.attributes.position.count; i++) {
+          const x = palmGeometry.attributes.position.getX(i);
+          const y = palmGeometry.attributes.position.getY(i);
+          const z = palmGeometry.attributes.position.getZ(i);
+          
+          // Round the top edges of the palm
+          if (y > 0) {
+            palmGeometry.attributes.position.setY(i, y - 0.05 * Math.abs(x));
+          }
+          
+          // Taper the palm slightly towards the wrist
+          if (z < 0) {
+            palmGeometry.attributes.position.setX(i, x * (1 + z * 0.1));
+          }
+        }
+        const palm = new THREE.Mesh(palmGeometry, skinMaterial);
+        palm.position.set(0, 0, 0);
+        hand.add(palm);
+
+        // Create wrist
+        const wristGeometry = new THREE.CylinderGeometry(0.6, 0.7, 0.7, 8, 1, false, 0, Math.PI);
+        const wrist = new THREE.Mesh(wristGeometry, skinMaterial);
+        wrist.rotation.x = Math.PI / 2;
+        wrist.position.set(0, 0, -1.2);
+        hand.add(wrist);
+
+        // Create more realistic fingers with knuckles and better segment proportions
+        createRealisticFinger('thumb', new THREE.Vector3(-0.7, 0, 0.7), [0.5, 0.4, 0.3], 0.18, -0.3);
+        createRealisticFinger('index', new THREE.Vector3(-0.4, 0, 0.9), [0.7, 0.5, 0.3], 0.15, 0);
+        createRealisticFinger('middle', new THREE.Vector3(0, 0, 0.9), [0.7, 0.5, 0.4], 0.16, 0);
+        createRealisticFinger('ring', new THREE.Vector3(0.4, 0, 0.9), [0.6, 0.5, 0.3], 0.15, 0);
+        createRealisticFinger('pinky', new THREE.Vector3(0.7, 0, 0.8), [0.5, 0.4, 0.25], 0.12, 0);
+
+        // Position thumb differently for realistic pose
+        if (fingers.thumb) {
+          fingers.thumb.rotation.y = Math.PI / 4;
+          fingers.thumb.rotation.z = -Math.PI / 5;
+          fingers.thumb.userData.isThumb = true; // Mark thumb for special handling
+        }
+        
+        console.log("Realistic hand created successfully");
+      }
+
+      // Create a more realistic finger with proper segments and joints
+      function createRealisticFinger(name, position, segmentLengths, thickness, angle) {
+        console.log(`Creating ${name} finger...`);
+        
+        const finger = new THREE.Group();
+        finger.position.copy(position);
+        finger.rotation.x = angle;
+        finger.name = name;  // Name the finger for raycasting
+        
+        // Create knuckle at base
+        const knuckleGeometry = new THREE.SphereGeometry(thickness * 1.1, 8, 8);
+        const knuckle = new THREE.Mesh(knuckleGeometry, skinMaterial);
+        finger.add(knuckle);
+        
+        let currentZ = 0;
+        
+        // Create finger segments with proper joints and proportions
+        for (let i = 0; i < 3; i++) {
+          const segmentLength = segmentLengths[i];
+          
+          // Create joint if not first segment
+          if (i > 0) {
+            const jointGeometry = new THREE.SphereGeometry(thickness * 0.9, 8, 8);
+            const joint = new THREE.Mesh(jointGeometry, skinMaterial);
+            joint.position.set(0, 0, currentZ);
+            finger.add(joint);
+          }
+          
+          // Create finger segment with tapered shape for realism
+          const segmentGeometry = new THREE.CylinderGeometry(
+            thickness * (1 - i * 0.1),          // Top radius (gets smaller for fingertips)
+            thickness * (1 - (i+0.5) * 0.1),    // Bottom radius
+            segmentLength,                      // Height
+            8,                                  // RadialSegments
+            1,                                  // HeightSegments
+            false
+          );
+          
+          const segment = new THREE.Mesh(segmentGeometry, skinMaterial);
+          segment.rotation.x = Math.PI / 2;     // Align cylinder with finger direction
+          segment.position.set(0, 0, currentZ + segmentLength/2);
+          segment.name = `${name}_segment_${i}`;
+          finger.add(segment);
+          
+          currentZ += segmentLength;
+          
+          // Add fingernail to the last segment
+          if (i === 2) {
+            const nailWidth = thickness * 1.2;
+            const nailLength = thickness * 1.5;
+            const nailThickness = thickness * 0.1;
+            
+            const nailGeometry = new THREE.BoxGeometry(nailWidth, nailThickness, nailLength);
+            const nail = new THREE.Mesh(nailGeometry, nailMaterial);
+            nail.position.set(0, thickness * 0.5, currentZ - thickness * 0.8);
+            finger.add(nail);
+          }
+        }
+        
+        // Add finger to tracking object and hand
+        fingers[name] = finger;
+        hand.add(finger);
+        
+        return finger;
+      }
+
+      // Event handlers with debugging
+      function onMouseDown(event) {
+        event.preventDefault();
+        
+        // Calculate mouse position
+        const mouse = new THREE.Vector2(
+          (event.clientX / window.innerWidth) * 2 - 1,
+          -(event.clientY / window.innerHeight) * 2 + 1
+        );
+
+        if (DEBUG) console.log("Mouse down at:", mouse);
+
+        // Raycasting to detect which finger is clicked
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Get all meshes from fingers for raycasting
+        const fingerMeshes = [];
+        Object.values(fingers).forEach(fingerGroup => {
+          if (fingerGroup) {
+            fingerGroup.traverse(child => {
+              if (child.isMesh) {
+                child.userData.fingerName = fingerGroup.name;
+                fingerMeshes.push(child);
+              }
+            });
+          }
+        });
+        
+        if (DEBUG) console.log("Raycasting against", fingerMeshes.length, "finger meshes");
+        const intersects = raycaster.intersectObjects(fingerMeshes);
+
+        if (intersects.length > 0) {
+          const fingerName = intersects[0].object.userData.fingerName;
+          if (DEBUG) console.log("Hit finger:", fingerName);
+          
+          if (fingerName && fingers[fingerName]) {
+            activeFinger = fingerName;
+            fingerSelected = true;
+            controls.enabled = false;
+            updateStatus(`Moving: ${fingerName.charAt(0).toUpperCase() + fingerName.slice(1)} finger`);
+          }
+        } else {
+          if (DEBUG) console.log("No finger hit");
+          fingerSelected = false;
+        }
+      }
+
+      function onMouseMove(event) {
+        if (!fingerSelected || !activeFinger || !fingers[activeFinger]) return;
+        
+        // Calculate normalized movement
+        const movementX = event.movementX / window.innerWidth * 5;
+        const movementY = -event.movementY / window.innerHeight * 5;
+        
+        if (DEBUG) console.log(`Moving ${activeFinger} finger: X=${movementX.toFixed(4)}, Y=${movementY.toFixed(4)}`);
+        
+        // Apply rotation to the active finger
+        const finger = fingers[activeFinger];
+        
+        // Rotate around appropriate axis based on the finger
+        if (finger.userData.isThumb) {
+          finger.rotation.z += movementX;
+          finger.rotation.y += movementY;
+        } else {
+          finger.rotation.x += movementY;
+          finger.rotation.z += movementX * 0.2; // Allow slight side-to-side movement
+        }
+      }
+
+      function onMouseUp() {
+        if (fingerSelected && activeFinger) {
+          if (DEBUG) console.log(`Released ${activeFinger} finger`);
+        }
+        
+        fingerSelected = false;
+        activeFinger = null;
+        controls.enabled = true;
+        updateStatus('Click on a finger to move it');
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function updateStatus(text) {
+        document.getElementById('status').textContent = text;
+      }
+
+      // Animation loop
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      // Debug helpers
+      function addAxesHelper() {
+        const axesHelper = new THREE.AxesHelper(5);
+        scene.add(axesHelper);
+        console.log("Added axes helper (red=X, green=Y, blue=Z)");
+      }
+
+      // Initialize
+      window.addEventListener('mousedown', onMouseDown, false);
+      window.addEventListener('mousemove', onMouseMove, false);
+      window.addEventListener('mouseup', onMouseUp, false);
+      window.addEventListener('resize', onWindowResize, false);
+
+      // Add coordinate helper for debugging
+      if (DEBUG) addAxesHelper();
+
+      // Start everything
+      createRealisticHand();
+      animate();
+      
+      // Remove loading screen when everything is ready
+      setTimeout(() => {
+        document.getElementById('loading').style.display = 'none';
+        console.log("App loaded successfully");
+      }, 1000);
+      
+    } catch (e) {
+      const errorElement = document.getElementById('error');
+      errorElement.textContent = "Error: " + (e.message || "Unknown error occurred while initializing the 3D scene");
+      errorElement.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+      console.error("Detailed error:", e);
+    }
+  });
+  </script>
+</body>
+</html>
